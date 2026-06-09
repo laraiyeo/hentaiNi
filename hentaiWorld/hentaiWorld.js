@@ -1,4 +1,4 @@
-/* HentaiWorld Sora Module v1.0.1 */
+/* HentaiWorld Sora Module v1.0.2 */
 
 // -------------- fetch helpers -----------------
 async function soraFetch(url, opts = {}) {
@@ -13,145 +13,117 @@ async function soraFetch(url, opts = {}) {
 async function searchResults(keyword) {
   try {
     const encodedKeyword = encodeURIComponent(keyword);
-    const res = await soraFetch(`https://hentaiworld.tv/?s=${encodedKeyword}`);
+
+    // Use the exact same search logic you tested in the HTML, but wrap in soraFetch
+    const res  = await soraFetch(`https://hentaiworld.tv/?s=${encodedKeyword}`, { headers: {} });
     const html = await res.text();
 
     const results = [];
-    // Match article elements in search results
     const itemRegex = /<article[^>]*class="[^"]*post-[0-9]+[^"]*"[^>]*>[\s\S]*?<a href="(https:\/\/hentaiworld\.tv\/hentai-videos\/[^"]+)"[^>]*title="([^"]*)"[^>]*>[\s\S]*?<img[^>]*src="(\/\/hentaiworldtv\.b-cdn\.net\/wp-content\/uploads\/[^\s"]+)[^>]*>[\s\S]*?<\/article>/g;
-    
+
     let match;
     while ((match = itemRegex.exec(html)) !== null) {
-      const url = match[1];
+      const url   = match[1];
       const title = match[2].trim();
-      let image = match[3];
-      
-      // Fix image URL protocol
-      if (image.startsWith('//')) {
-        image = `https:${image}`;
-      }
-      
-      // Avoid duplicates
+      let   image = match[3];
+
+      // Fix protocol‐relative image URLS (exactly as did in the HTML test)
+      if (image.startsWith('//')) image = `https:${image}`;
+
+      // De-duplicate – optional but recommended
       if (!results.some(r => r.href === url)) {
-        results.push({
-          title: title,
-          image: image,
-          href: url
-        });
+        results.push({ title, image, href: url });
       }
     }
 
     return JSON.stringify(results);
   } catch (e) {
-    console.log("Search Error:", e.message);
-    return JSON.stringify([]);
+    console.warn('[HentaiWorld/search] '+e.message);
+    return '[]';
   }
 }
 
-// -------------- show details ---------------
+// -------------- details -----------------
 async function extractDetails(url) {
   try {
-    const html = await (await soraFetch(url)).text();
+    const html = await (await soraFetch(url, { headers: {} })).text();
 
-    // Extract description (first paragraph after entry-content)
+    // Title
+    const titleMatch = html.match(/<h1[^>]*class="[^"]*entry-title[^"]*"[^>]*>([^<]+)<\/h1>/i);
+    const title = titleMatch ? titleMatch[1].trim() : 'Unknown';
+
+    // Synopsis
     const descMatch = html.match(/<div[^>]*class="[^"]*entry-content[^"]*"[^>]*>([\s\S]*?)(?:<div class="episode-info-container">|<div class="wpulike|<\/div>)/i);
     let description = 'No description available';
     if (descMatch) {
       description = descMatch[1]
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<[^>]+>/g, '')
-        .replace(/\s+/g, ' ')
+        .replace(/<br\s*\/?>/gi,'\n')
+        .replace(/<[^>]+>/g,'')
+        .replace(/\s+/g,' ')
         .trim()
-        .substring(0, 500); // Limit length
+        .substring(0,500);
     }
 
-    // Extract title from h1
-    const titleMatch = html.match(/<h1[^>]*class="[^"]*entry-title[^"]*"[^>]*>([^<]+)<\/h1>/i);
-    const title = titleMatch ? titleMatch[1].trim() : 'Unknown Title';
-
-    // Extract release date
+    // Release date
     let airdate = 'Unknown';
     const dateMatch = html.match(/Release Date:[\s\n]*([0-9\/]+)/i);
-    if (dateMatch) {
-      airdate = dateMatch[1];
-    }
+    if (dateMatch) airdate = dateMatch[1];
 
-    return JSON.stringify({
-      description: description,
-      aliases: title,
-      airdate: `Released: ${airdate}`
-    });
+    return JSON.stringify({ description, aliases: title, airdate: `Released: ${airdate}` });
   } catch (e) {
-    console.log('Details Error:', e.message);
-    return JSON.stringify({ 
-      description: 'Error loading description', 
-      aliases: 'Error', 
-      airdate: 'Error' 
-    });
+    console.warn('[HentaiWorld/details] '+e.message);
+    return JSON.stringify({ description:'Error', aliases:'Error', airdate:'Error' });
   }
 }
 
-// -------------- episodes (series handling) ---------------
-// Since HentaiWorld doesn't group episodes, we treat each video as its own "series"
+// -------------- episodes -----------------
 async function extractEpisodes(url) {
-  try {
-    // In HentaiWorld, the "series" page IS the episode page
-    // So we return just this one episode
-    return JSON.stringify([{
-      href: url,
-      number: 1
-    }]);
-  } catch (e) {
-    console.log('Episodes Error:', e.message);
-    return JSON.stringify([]); 
-  }
+  // Every HentaiWorld page is just one episode; mirror that exactly.
+  return JSON.stringify([{ href: url, number: 1 }]);
 }
 
-// -------------- stream ---------------
+// -------------- stream (copy/pasted from HTML) --------------
 async function extractStreamUrl(url) {
   try {
-    const html = await (await soraFetch(url)).text();
-    
-    // First, try to extract the direct MP4 URL from the download function
+    const html = await (await soraFetch(url, { headers: {} })).text();
+
+    // 1. Try window.open( … .mp4, '_blank' )
     const downloadMatch = html.match(/window\.open\('([^']*\.mp4)', '_blank'\)/);
-    
-    let streamUrl;
     if (downloadMatch) {
-      streamUrl = downloadMatch[1];
-    } else {
-      // Fallback to constructing from player URL
-      const streamMatch = html.match(/window\.setTimeout\(function \(\) \{\s*var iframe = document\.getElementById\('videoPlayer'\);\s*iframe\.setAttribute\('src', '([^']+)'\);\s*\}, 250\);/);
-      
-      if (!streamMatch) throw new Error('Stream URL not found in page');
-      
-      let playerUrl = streamMatch[1];
-      
-      // Handle relative URLs
-      if (playerUrl.startsWith('/')) {
-        playerUrl = `https://hentaiworld.tv${playerUrl}`;
-      } else if (playerUrl.startsWith('//')) {
-        playerUrl = `https:${playerUrl}`;
-      }
-      
-      // Construct the direct MP4 URL from the player URL
-      const videoPathMatch = playerUrl.match(/video-player\.html\?(.*)/);
-      if (!videoPathMatch) throw new Error('Could not extract video path');
-      
-      const videoPath = videoPathMatch[1];
-      streamUrl = `https://hentaiworld.tv/${videoPath}`;
+      const mp4 = downloadMatch[1];
+      console.log('[HentaiWorld] got direct MP4 from download: '+mp4);
+      return JSON.stringify({
+        streams:[{
+          title:'Download MP4',
+          streamUrl: mp4,
+          headers:{Referer:'https://hentaiworld.tv/'}
+        }]
+      });
     }
-    
+
+    // 2. Fallback – build from video-player.html?…  (exact HTML logic)
+    const scriptMatch = html.match(/window\.setTimeout\(function\s*\(\)\s*{\s*var\s+iframe\s*=\s*document\.getElementById\('videoPlayer'\);\s*iframe\.setAttribute\('src',\s*'([^']+)'\)\s*},\s*250\);/);
+    if (!scriptMatch) throw new Error('Cannot find MP4 src');
+
+    let playerUrl = scriptMatch[1];
+    if (playerUrl.startsWith('//')) playerUrl = 'https:'+playerUrl;
+    else if (playerUrl.startsWith('/')) playerUrl = 'https://hentaiworld.tv'+playerUrl;
+
+    const qsMatch = playerUrl.match(/video-player\.html\?(.*)/);
+    if (!qsMatch) throw new Error('Bad video-player path');
+
+    const mp4url = 'https://hentaiworld.tv/' + qsMatch[1];
+    console.log('[HentaiWorld] built MP4 URL from player src: '+mp4url);
+
     return JSON.stringify({
-      streams: [{
-        title: 'HentaiWorld Stream',
-        streamUrl: streamUrl,
-        headers: { 
-          Referer: 'https://hentaiworld.tv/'
-        }
+      streams:[{
+        title:'Video MP4',
+        streamUrl: mp4url,
+        headers:{Referer:'https://hentaiworld.tv/'}
       }]
     });
-  } catch (err) {
-    console.log('Stream Error:', err.message);
-    return JSON.stringify({ streams: [] });
+  } catch (e) {
+    console.warn('[HentaiWorld/stream] '+e.message);
+    return JSON.stringify({ streams:[] });
   }
 }
