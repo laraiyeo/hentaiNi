@@ -11,7 +11,7 @@
   "quality": "720p",
   "baseUrl": "https://hentaiworld.tv",
   "searchBaseUrl": "https://hentaiworld.tv/?s=%s",
-  "scriptUrl": "https://raw.githubusercontent.com/yourusername/yourrepo/main/hentaiworld.js",
+  "scriptUrl": "https://raw.githubusercontent.com/laraiyeo/hentaiNi/refs/heads/main/hentaiWorld/hentaiWorld.js",
   "type": "anime",
   "downloadSupport": true,
   "asyncJS": true,
