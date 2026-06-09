@@ -1,0 +1,19 @@
+{
+  "sourceName": "HentaiHaven",
+  "iconUrl": "https://www.google.com/s2/favicons?sz=64&domain=hentaihaven.xxx",
+  "author": {
+        "name": "Dami",
+        "icon": "https://wallpapers.com/images/featured/blank-white-7sn5o1woonmklx1h.jpg"
+  },
+  "version": "1.0.1",
+  "language": "English (SUB)",
+  "streamType": "HLS",
+  "quality": "720p",
+  "baseUrl": "https://hentaihaven.xxx",
+  "searchBaseUrl": "https://hentaihaven.xxx/?s=%s",
+  "scriptUrl": "https://raw.githubusercontent.com/laraiyeo/hentaiNi/refs/heads/main/hentaiHaven/hentaiHaven.js",
+  "type": "anime",
+  "downloadSupport": false,
+  "asyncJS": true,
+  "softsub": true
+}
