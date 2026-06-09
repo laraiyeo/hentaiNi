@@ -1,0 +1,19 @@
+{
+  "sourceName": "HentaiWorld",
+  "iconUrl": "https://hentaiworld.tv/wp-content/uploads/2020/04/cropped-1586514450834-192x192.png",
+  "author": {
+    "name": "SoraModuleDev",
+    "icon": "https://hentaiworld.tv/wp-content/uploads/2020/04/cropped-1586514450834-192x192.png"
+  },
+  "version": "1.0.0",
+  "language": "English (SUB)",
+  "streamType": "MP4",
+  "quality": "1080p",
+  "baseUrl": "https://hentaiworld.tv",
+  "searchBaseUrl": "https://hentaiworld.tv/?s=%s",
+  "scriptUrl": "https://raw.githubusercontent.com/yourusername/yourrepo/main/hentaiworld.js",
+  "type": "anime",
+  "downloadSupport": true,
+  "asyncJS": true,
+  "softsub": true
+}
