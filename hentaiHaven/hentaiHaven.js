@@ -1,5 +1,5 @@
-/* HentaiHaven Sora Module v1.0.3
-   Complete rewrite with proper HTML parsing based on test.html findings
+/* HentaiHaven Sora Module v1.0.4
+   Fixed search results count and stream URL handling
 */
 
 // -------------- fetch helpers -----------------
@@ -39,32 +39,44 @@ async function searchResults(keyword) {
           const imgMatch = item.match(/<img src="([^"]+)" alt="([^"]+) cover"[^>]*>/i);
           
           if (titleMatch) {
-            out.push({
-              title: titleMatch[2].trim(),
-              image: imgMatch ? imgMatch[1] : "",
-              href: titleMatch[1]
-            });
+            const alreadyExists = out.some(r => r.href === titleMatch[1]);
+            if (!alreadyExists) {
+              out.push({
+                title: titleMatch[2].trim(),
+                image: imgMatch ? imgMatch[1] : "",
+                href: titleMatch[1]
+              });
+            }
           } else if (titleMatch2) {
-            out.push({
-              title: titleMatch2[2].trim(),
-              image: imgMatch ? imgMatch[1] : "",
-              href: titleMatch2[1]
-            });
+            const alreadyExists = out.some(r => r.href === titleMatch2[1]);
+            if (!alreadyExists) {
+              out.push({
+                title: titleMatch2[2].trim(),
+                image: imgMatch ? imgMatch[1] : "",
+                href: titleMatch2[1]
+              });
+            }
           } else if (titleMatch3) {
-            out.push({
-              title: titleMatch3[2].trim(),
-              image: imgMatch ? imgMatch[1] : "",
-              href: titleMatch3[1]
-            });
+            const alreadyExists = out.some(r => r.href === titleMatch3[1]);
+            if (!alreadyExists) {
+              out.push({
+                title: titleMatch3[2].trim(),
+                image: imgMatch ? imgMatch[1] : "",
+                href: titleMatch3[1]
+              });
+            }
           } else if (imgMatch) {
             // Use image alt text as title fallback
             const hrefMatch = item.match(/href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]+)"/i);
             if (hrefMatch) {
-              out.push({
-                title: imgMatch[2].trim(),
-                image: imgMatch[1],
-                href: hrefMatch[1]
-              });
+              const alreadyExists = out.some(r => r.href === hrefMatch[1]);
+              if (!alreadyExists) {
+                out.push({
+                  title: imgMatch[2].trim(),
+                  image: imgMatch[1],
+                  href: hrefMatch[1]
+                });
+              }
             }
           }
         }
@@ -185,12 +197,18 @@ async function extractEpisodes(url) {
           let fullHref = href;
           if (href.startsWith('/')) {
             fullHref = `https://hentaihaven.xxx${href}`;
+          } else if (!href.startsWith('http')) {
+            fullHref = `https://hentaihaven.xxx/watch/${baseUrl.split('/').pop()}/${href}`;
           }
           
-          episodes.push({
-            href: fullHref,
-            number: number
-          });
+          // Check for duplicates
+          const alreadyExists = episodes.some(ep => ep.href === fullHref);
+          if (!alreadyExists) {
+            episodes.push({
+              href: fullHref,
+              number: number
+            });
+          }
         }
       }
     }
@@ -230,17 +248,33 @@ async function extractStreamUrl(url) {
   try {
     const html = await(await soraFetch(url)).text();
 
-    // Look for stream URLs
-    let streamSrc = html.match(/file\s*:\s*["']([^"']+\.(m3u8|mp4))["']/i)?.[1] ||
-                    html.match(/source[^>]+src=["']([^"']+\.(m3u8|mp4))["']/i)?.[1] ||
-                    html.match(/<[^>]+src=["']([^"']+\.(?:m3u8|mp4|flv|webm))["']/i)?.[1];
+    // First, look for iframe player URLs like the one you found
+    let streamSrc = html.match(/<iframe[^>]+src=["'](https:\/\/hentaihaven\.xxx\/wp-content\/plugins\/player-logic\/player\.php[^"']*)["']/i)?.[1];
 
-    // Try iframe sources
-    if (!streamSrc) {
-      const iframeMatch = html.match(/<iframe[^>]+src=["'](https?:[^"']*)["']/i);
-      if (iframeMatch) {
-        streamSrc = iframeMatch[1];
+    // If iframe found, we need to extract the actual video URL from the player page
+    if (streamSrc) {
+      try {
+        // Fetch the player page to get the actual stream URL
+        const playerHtml = await(await soraFetch(streamSrc)).text();
+        
+        // Look for video source in the player page
+        const videoSrc = playerHtml.match(/file\s*:\s*["']([^"']+\.(m3u8|mp4))["']/i)?.[1] ||
+                        playerHtml.match(/source[^>]+src=["']([^"']+\.(m3u8|mp4))["']/i)?.[1];
+        
+        if (videoSrc) {
+          streamSrc = videoSrc;
+        }
+      } catch (e) {
+        console.log("Player page fetch error:", e.message);
+        // Fall back to iframe URL if we can't fetch player page
       }
+    }
+
+    // If no iframe, look for direct stream URLs
+    if (!streamSrc) {
+      streamSrc = html.match(/file\s*:\s*["']([^"']+\.(m3u8|mp4))["']/i)?.[1] ||
+                  html.match(/source[^>]+src=["']([^"']+\.(m3u8|mp4))["']/i)?.[1] ||
+                  html.match(/<[^>]+src=["']([^"']+\.(?:m3u8|mp4|flv|webm))["']/i)?.[1];
     }
 
     // Try javascript sources
@@ -258,7 +292,10 @@ async function extractStreamUrl(url) {
       streams: [{
         title: 'HentaiHaven Main',
         streamUrl: streamSrc,
-        headers: { Referer: 'https://hentaihaven.xxx/' }
+        headers: { 
+          Referer: 'https://hentaihaven.xxx/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
       }]
     });
   } catch (err) {
