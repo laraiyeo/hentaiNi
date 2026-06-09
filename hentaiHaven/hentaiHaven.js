@@ -1,5 +1,5 @@
-/* HentaiHaven Sora Module v1.0.2
-   Fixed search parsing to match actual HTML structure
+/* HentaiHaven Sora Module v1.0.3
+   Complete rewrite with proper HTML parsing based on test.html findings
 */
 
 // -------------- fetch helpers -----------------
@@ -18,30 +18,93 @@ async function searchResults(keyword) {
     const html = await res.text();
 
     const out = [];
-    // Parse search results from the actual HTML structure
-    // Looking for: <div class="c-tabs-item__content"> ... <h3 class="h4"><a href="URL">Title</a></h3>
-    const itemRegex = /<div class="c-tabs-item__content[^>]*>[\s\S]*?<a href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]+)"[^>]*>[\s\S]*?<img[^>]*src="([^"]+)"[^>]*>[\s\S]*?<h3 class="h4"[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/g;
     
-    let match;
-    while ((match = itemRegex.exec(html)) !== null) {
-      out.push({
-        title: match[3].trim(),
-        image: match[2],
-        href: match[1]
-      });
+    // Method 1: Look for tab-content-wrap sections with actual results
+    const tabContentMatches = html.match(/<div class="tab-content-wrap">[\s\S]*?<div role="tabpanel"[^>]*class="[^"]*c-tabs-item[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>/gi);
+    if (tabContentMatches && tabContentMatches.length > 0) {
+      for (let t = 0; t < tabContentMatches.length; t++) {
+        const tabContent = tabContentMatches[t];
+        // Extract individual result items
+        const resultItems = tabContent.match(/<div class="c-tabs-item__content[^>]*>[\s\S]*?<\/div>\s*<\/div>/gi) || [];
+        
+        for (let i = 0; i < resultItems.length; i++) {
+          const item = resultItems[i];
+          
+          // Try various patterns for title extraction
+          const titleMatch = item.match(/<h3 class="h4"><a href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]+)">([^<]+)<\/a><\/h3>/i);
+          const titleMatch2 = item.match(/<h3 class="h4">\s*<a[^>]*href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]+)"[^>]*>([^<]+)<\/a>\s*<\/h3>/i);
+          const titleMatch3 = item.match(/<h3 class="h4">[^<]*<a[^>]*href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]+)"[^>]*>([^<]+)<\/a>/i);
+          
+          // Extract image
+          const imgMatch = item.match(/<img src="([^"]+)" alt="([^"]+) cover"[^>]*>/i);
+          
+          if (titleMatch) {
+            out.push({
+              title: titleMatch[2].trim(),
+              image: imgMatch ? imgMatch[1] : "",
+              href: titleMatch[1]
+            });
+          } else if (titleMatch2) {
+            out.push({
+              title: titleMatch2[2].trim(),
+              image: imgMatch ? imgMatch[1] : "",
+              href: titleMatch2[1]
+            });
+          } else if (titleMatch3) {
+            out.push({
+              title: titleMatch3[2].trim(),
+              image: imgMatch ? imgMatch[1] : "",
+              href: titleMatch3[1]
+            });
+          } else if (imgMatch) {
+            // Use image alt text as title fallback
+            const hrefMatch = item.match(/href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]+)"/i);
+            if (hrefMatch) {
+              out.push({
+                title: imgMatch[2].trim(),
+                image: imgMatch[1],
+                href: hrefMatch[1]
+              });
+            }
+          }
+        }
+      }
     }
-    
-    // Alternative parsing method if the above doesn't work
+
+    // Method 2: Fallback to finding all c-tabs-item__content items directly
     if (out.length === 0) {
-      // Try parsing from the tab-thumb structure
-      const altRegex = /<div class="tab-thumb[^>]*>[\s\S]*?<a href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]+)"[^>]*title="([^"]*)"[^>]*>[\s\S]*?<img[^>]*src="([^"]+)"/g;
-      let altMatch;
-      while ((altMatch = altRegex.exec(html)) !== null) {
-        out.push({
-          title: altMatch[2].trim(),
-          image: altMatch[3],
-          href: altMatch[1]
-        });
+      const allItems = html.match(/<div class="c-tabs-item__content[^>]*>[\s\S]*?<\/div>\s*<\/div>/gi) || [];
+      
+      for (let i = 0; i < allItems.length; i++) {
+        const item = allItems[i];
+        
+        if (item.includes('/watch/')) {
+          // Extract href
+          const hrefMatch = item.match(/href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]+)"/i);
+          
+          // Extract title from various patterns
+          const titleMatch1 = item.match(/<h3 class="h4">[^<]*<a[^>]*href="[^"]*"[^>]*>([^<]+)<\/a>/i);
+          const titleMatch2 = item.match(/<a[^>]*href="https:\/\/hentaihaven\.xxx\/watch\/[^"]+"[^>]*>([^<]+)<\/a>/i);
+          
+          // Extract image and alt text
+          const imgMatch = item.match(/<img[^>]*src="([^"]+)"[^>]*alt="([^"]+) cover/i);
+          
+          if (hrefMatch) {
+            const title = titleMatch1 ? titleMatch1[1] : 
+                         titleMatch2 ? titleMatch2[1] : 
+                         (imgMatch ? imgMatch[2] : "Unknown Title");
+            
+            // Check for duplicates
+            const alreadyExists = out.some(r => r.href === hrefMatch[1]);
+            if (!alreadyExists) {
+              out.push({
+                title: title.trim(),
+                image: imgMatch ? imgMatch[1] : "",
+                href: hrefMatch[1]
+              });
+            }
+          }
+        }
       }
     }
 
@@ -57,30 +120,34 @@ async function extractDetails(url) {
   try {
     const html = await(await soraFetch(url)).text();
 
-    // Extract title from h1
+    // Extract title
     const titleMatch = html.match(/<h1[^>]*class="[^"]*entry-title[^"]*"[^>]*>([^<]+)<\/h1>/i) || 
                       html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
     const title = titleMatch ? titleMatch[1].trim() : 'Unknown';
 
-    // Extract description from post-content
+    // Extract description
     const descMatch = html.match(/<div[^>]*class="[^"]*post-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
     let description = 'No description available';
     if (descMatch) {
-      // Clean up HTML tags from description
-      description = descMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() || 'No description available';
+      description = descMatch[1]
+        .replace(/<br[^>]*>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
     }
 
-    // Extract release year
-    const yearMatch = html.match(/<div[^>]*class="[^"]*release-year[^"]*"[^>]*>[\s\S]*?<a[^>]*>(\d{4})<\/a>/i) ||
+    // Extract year
+    const yearMatch = html.match(/<div[^>]*class="[^"]*release-year[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
                      html.match(/Release.*?(\d{4})/i);
-    const year = yearMatch ? yearMatch[1] : 'Unknown';
+    const year = yearMatch ? (yearMatch[1].match(/\d{4}/) || ['Unknown'])[0] : 'Unknown';
 
     return JSON.stringify({
       description: description,
       aliases: title,
       airdate: year
     });
-  } catch {
+  } catch (e) {
+    console.log('Details Error:', e.message);
     return JSON.stringify({ 
       description: 'Error loading description', 
       aliases: 'Error', 
@@ -95,32 +162,65 @@ async function extractEpisodes(url) {
     const html = await(await soraFetch(url)).text();
 
     const episodes = [];
-    // Parse episodes from the HTML
-    const episodeRegex = /<a[^>]*href="(https:\/\/hentaihaven\.xxx\/watch\/[^\/]+\/[^"]+)"[^>]*>[^<]*Episode\s+(\d+)[^<]*<\/a>/gi;
     
-    let match;
-    while ((match = episodeRegex.exec(html)) !== null) {
-      episodes.push({
-        href: match[1],
-        number: parseInt(match[2], 10)
-      });
+    // Extract the base URL path to filter episodes
+    const baseUrlMatch = url.match(/(https:\/\/hentaihaven\.xxx\/watch\/[^\/]+)\//);
+    const baseUrl = baseUrlMatch ? baseUrlMatch[1] : url.replace(/\/$/, '');
+
+    // Method 1: Look for the select picker with episode options
+    const selectMatch = html.match(/<select[^>]*class="[^"]*single-chapter-select[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
+    if (selectMatch) {
+      const selectContent = selectMatch[1];
+      const optionPattern = /<option[^>]*data-redirect="([^"]*)"[^>]*>([^<]+)<\/option>/gi;
+      
+      let match;
+      while ((match = optionPattern.exec(selectContent)) !== null) {
+        const href = match[1];
+        const text = match[2].trim();
+        
+        if (href && text) {
+          const numMatch = text.match(/Episode\s*(\d+)/i);
+          const number = numMatch ? parseInt(numMatch[1], 10) : episodes.length + 1;
+          
+          let fullHref = href;
+          if (href.startsWith('/')) {
+            fullHref = `https://hentaihaven.xxx${href}`;
+          }
+          
+          episodes.push({
+            href: fullHref,
+            number: number
+          });
+        }
+      }
     }
 
-    // Alternative method: look for episode list structure
+    // Method 2: Fallback to direct episode URL pattern matching
     if (episodes.length === 0) {
-      const altRegex = /<div[^>]*class="[^"]*latest-chap[^"]*"[^>]*>[\s\S]*?<a[^>]*href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]+)"[^>]*>[^<]*Episode\s+(\d+)[^<]*<\/a>/gi;
-      let altMatch;
-      while ((altMatch = altRegex.exec(html)) !== null) {
-        episodes.push({
-          href: altMatch[1],
-          number: parseInt(altMatch[2], 10)
-        });
+      const episodeUrlPattern = /href="(https:\/\/hentaihaven\.xxx\/watch\/[^"]*\/episode-(\d+))"/gi;
+      let match;
+      
+      while ((match = episodeUrlPattern.exec(html)) !== null) {
+        const fullUrl = match[1];
+        const episodeNumber = parseInt(match[2], 10);
+        
+        // Filter to only include episodes from the current series
+        if (fullUrl.includes(baseUrl)) {
+          const alreadyExists = episodes.some(ep => ep.href === fullUrl);
+          if (!alreadyExists) {
+            episodes.push({
+              href: fullUrl,
+              number: episodeNumber
+            });
+          }
+        }
       }
     }
 
     episodes.sort((a, b) => a.number - b.number);
     return JSON.stringify(episodes);
-  } catch { 
+  } catch (e) {
+    console.log('Episodes Error:', e.message);
     return JSON.stringify([]); 
   }
 }
@@ -130,26 +230,34 @@ async function extractStreamUrl(url) {
   try {
     const html = await(await soraFetch(url)).text();
 
-    // Look for common video source patterns in HentaiHaven
-    let src = html.match(/file["\s]*:[\s]*["']([^"']+\.(m3u8|mp4))["']/i)?.[1] ||
-              html.match(/source[^>]+src=["']([^"']+\.(m3u8|mp4))["']/i)?.[1] ||
-              html.match(/<source[^>]+src=["']([^"']+\.(m3u8|mp4))["']/i)?.[1];
+    // Look for stream URLs
+    let streamSrc = html.match(/file\s*:\s*["']([^"']+\.(m3u8|mp4))["']/i)?.[1] ||
+                    html.match(/source[^>]+src=["']([^"']+\.(m3u8|mp4))["']/i)?.[1] ||
+                    html.match(/<[^>]+src=["']([^"']+\.(?:m3u8|mp4|flv|webm))["']/i)?.[1];
 
-    if (!src) {
-      // Try to find iframe sources
+    // Try iframe sources
+    if (!streamSrc) {
       const iframeMatch = html.match(/<iframe[^>]+src=["'](https?:[^"']*)["']/i);
       if (iframeMatch) {
-        // For iframes, we might need to extract from the embedded page
-        src = iframeMatch[1];
+        streamSrc = iframeMatch[1];
       }
     }
 
-    if (!src) throw new Error('No stream found');
+    // Try javascript sources
+    if (!streamSrc) {
+      const jsMatch = html.match(/sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+\.(m3u8|mp4))["']/i) || 
+                     html.match(/videoUrl\s*=\s*["']([^"']+)["']/i);
+      if (jsMatch) {
+        streamSrc = jsMatch[1];
+      }
+    }
+
+    if (!streamSrc) throw new Error('No stream found');
 
     return JSON.stringify({
       streams: [{
         title: 'HentaiHaven Main',
-        streamUrl: src,
+        streamUrl: streamSrc,
         headers: { Referer: 'https://hentaihaven.xxx/' }
       }]
     });
