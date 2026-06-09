@@ -1,0 +1,19 @@
+{
+    "sourceName": "HentaiBros",
+    "iconUrl": "https://www.google.com/s2/favicons?sz=128&domain_url=hentaibros.net",
+    "author": {
+        "name": "Dami",
+        "icon": "https://wallpapers.com/images/featured/blank-white-7sn5o1woonmklx1h.jpg"
+    },
+    "version": "1.0.0",
+    "language": "English (SUB)",
+    "streamType": "MP4",
+    "quality": "720p",
+    "baseUrl": "https://hentaibros.net/",
+    "searchBaseUrl": "https://hentaibros.net/?s=%s",
+    "scriptUrl": "https://raw.githubusercontent.com/yourusername/yourrepo/main/hentaiBros.js",
+    "type": "anime",
+    "downloadSupport": false,
+    "asyncJS": true,
+    "softsub": true
+}
