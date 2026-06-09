@@ -1,4 +1,4 @@
-/* HentaiWorld Sora Module v1.0.0 */
+/* HentaiWorld Sora Module v1.0.1 */
 
 // -------------- fetch helpers -----------------
 async function soraFetch(url, opts = {}) {
@@ -112,26 +112,34 @@ async function extractStreamUrl(url) {
   try {
     const html = await (await soraFetch(url)).text();
     
-    // Extract iframe source for player
-    const iframeMatch = html.match(/<iframe[^>]*id="videoPlayer"[^>]*src="([^"]*)"[^>]*>/i);
-    if (!iframeMatch) throw new Error('Player iframe not found');
+    // First, try to extract the direct MP4 URL from the download function
+    const downloadMatch = html.match(/window\.open\('([^']*\.mp4)', '_blank'\)/);
     
-    let playerSrc = iframeMatch[1];
-    if (playerSrc.startsWith('//')) {
-      playerSrc = `https:${playerSrc}`;
-    } else if (playerSrc.startsWith('/')) {
-      playerSrc = `https://hentaiworld.tv${playerSrc}`;
+    let streamUrl;
+    if (downloadMatch) {
+      streamUrl = downloadMatch[1];
+    } else {
+      // Fallback to constructing from player URL
+      const streamMatch = html.match(/window\.setTimeout\(function \(\) \{\s*var iframe = document\.getElementById\('videoPlayer'\);\s*iframe\.setAttribute\('src', '([^']+)'\);\s*\}, 250\);/);
+      
+      if (!streamMatch) throw new Error('Stream URL not found in page');
+      
+      let playerUrl = streamMatch[1];
+      
+      // Handle relative URLs
+      if (playerUrl.startsWith('/')) {
+        playerUrl = `https://hentaiworld.tv${playerUrl}`;
+      } else if (playerUrl.startsWith('//')) {
+        playerUrl = `https:${playerUrl}`;
+      }
+      
+      // Construct the direct MP4 URL from the player URL
+      const videoPathMatch = playerUrl.match(/video-player\.html\?(.*)/);
+      if (!videoPathMatch) throw new Error('Could not extract video path');
+      
+      const videoPath = videoPathMatch[1];
+      streamUrl = `https://hentaiworld.tv/${videoPath}`;
     }
-    
-    // Fetch player page to get actual stream
-    const playerRes = await soraFetch(playerSrc);
-    const playerHtml = await playerRes.text();
-    
-    // Extract stream URL from player
-    const streamMatch = playerHtml.match(/<source[^>]*src=["'](https?:\/\/[^"']*\.mp4)["'][^>]*>/i);
-    if (!streamMatch) throw new Error('Stream URL not found in player');
-    
-    const streamUrl = streamMatch[1];
     
     return JSON.stringify({
       streams: [{
