@@ -1,5 +1,11 @@
 /* HentaiWorld Sora Module v1.0.2 */
 
+function decodeHtml(str) {
+  const txt = document.createElement('textarea');
+  txt.innerHTML = str;
+  return txt.value;
+}
+
 // -------------- fetch helpers -----------------
 async function soraFetch(url, opts = {}) {
   try {
@@ -24,7 +30,7 @@ async function searchResults(keyword) {
     let match;
     while ((match = itemRegex.exec(html)) !== null) {
       const url   = match[1];
-      const title = match[2].trim();
+      const title = decodeHtml(match[2]).trim();
       let   image = match[3];
 
       // Fix protocol‐relative image URLS (exactly as did in the HTML test)
@@ -50,13 +56,13 @@ async function extractDetails(url) {
 
     // Title
     const titleMatch = html.match(/<h1[^>]*class="[^"]*entry-title[^"]*"[^>]*>([^<]+)<\/h1>/i);
-    const title = titleMatch ? titleMatch[1].trim() : 'Unknown';
+    const title = titleMatch ? decodeHtml(titleMatch[1]).trim() : 'Unknown';
 
     // Synopsis
     const descMatch = html.match(/<div[^>]*class="[^"]*entry-content[^"]*"[^>]*>([\s\S]*?)(?:<div class="episode-info-container">|<div class="wpulike|<\/div>)/i);
     let description = 'No description available';
     if (descMatch) {
-      description = descMatch[1]
+      description = decodeHtml(descMatch[1])
         .replace(/<br\s*\/?>/gi,'\n')
         .replace(/<[^>]+>/g,'')
         .replace(/\s+/g,' ')
